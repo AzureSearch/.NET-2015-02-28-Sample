@@ -1,0 +1,1 @@
+C:\demo\GA_Demo\AzureSearchDotNetSample\AzureSearchDotNetSample\bin\Debug\AzureSearchDotNetSample.exe.config
