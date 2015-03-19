@@ -30,7 +30,7 @@ namespace DataIndexer
 
             // Create an HTTP reference to the catalog index
             _searchClient = new SearchServiceClient(searchServiceName, new SearchCredentials(apiKey));
-            _indexClient = _searchClient.Indexes.GetClient("features");
+            _indexClient = _searchClient.Indexes.GetClient("geonames");
 
             Console.WriteLine("{0}", "Deleting index...\n");
             if (DeleteIndex())
@@ -49,7 +49,7 @@ namespace DataIndexer
             // Delete the index if it exists
             try
             {
-                AzureOperationResponse response = _searchClient.Indexes.Delete("features");
+                AzureOperationResponse response = _searchClient.Indexes.Delete("geonames");
             }
             catch (Exception ex)
             {
@@ -68,7 +68,7 @@ namespace DataIndexer
             {
                 var definition = new Index()
                 {
-                    Name = "features",
+                    Name = "geonames",
                     Fields = new[] 
                     { 
                         new Field("FEATURE_ID",     DataType.String)         { IsKey = true,  IsSearchable = false, IsFilterable = false, IsSortable = false, IsFacetable = false, IsRetrievable = true},
