@@ -9,8 +9,11 @@ using System.Data;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Http;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
+using System.Timers;
 
 namespace DataIndexer
 {
@@ -18,7 +21,6 @@ namespace DataIndexer
     {
         private static SearchServiceClient _searchClient;
         private static SearchIndexClient _indexClient;
-        private static string _fileName = @"USGS_WA_Features_Descriptions.txt";
 
         // This Sample shows how to delete, create, upload documents and query an index
         static void Main(string[] args)
@@ -35,8 +37,8 @@ namespace DataIndexer
             {
                 Console.WriteLine("{0}", "Creating index...\n");
                 CreateIndex();
-                Console.WriteLine("{0}", "Uploading documents...\n");
-                UploadDocuments();
+                Console.WriteLine("{0}", "Sync documents from Azure SQL...\n");
+                SyncDataFromAzureSQL();
             }
             Console.WriteLine("{0}", "Complete.  Press any key to end application...\n");
             Console.ReadKey();
@@ -96,112 +98,71 @@ namespace DataIndexer
 
         }
 
-        private static void UploadDocuments()
+        private static bool SyncDataFromAzureSQL()
         {
-            //Load a CSV file and upload it as a batch of documents
-            System.Data.DataTable dt = LoadCSV(_fileName);
+            // This will use the Azure Search Indexer to synchronize data from Azure SQL to Azure Search
+            Uri _serviceUri = new Uri("https://" + ConfigurationManager.AppSettings["SearchServiceName"] + ".search.windows.net");
+            HttpClient _httpClient = new HttpClient();
+            _httpClient.DefaultRequestHeaders.Add("api-key", ConfigurationManager.AppSettings["SearchServiceApiKey"]);
 
-            List<IndexAction> indexOperations = new List<IndexAction>();
-            int colCounter = 0, rowCounter = 0, outInt;
-            double PRIM_LAT_DEC=0, PRIM_LONG_DEC=0;
+            Console.WriteLine("{0}", "Deleting Indexer (if it exists)...\n");
+            Uri uri = new Uri(_serviceUri, "indexers/usgs-indexer");
+            HttpResponseMessage response = AzureSearchHelper.SendSearchRequest(_httpClient, HttpMethod.Delete, uri);
+            if (response.StatusCode != HttpStatusCode.NoContent)
+                return false;
 
-            // Skip the first header row
-            for (int i = 1; i < dt.Rows.Count; i++)
+            Console.WriteLine("{0}", "Deleting Indexer Data Source (if it exists)...\n");
+            uri = new Uri(_serviceUri, "datasources/usgs-datasource");
+            response = AzureSearchHelper.SendSearchRequest(_httpClient, HttpMethod.Delete, uri);
+            if (response.StatusCode != HttpStatusCode.NoContent)
+                return false;
+
+            Console.WriteLine("{0}", "Creating Indexer Data Source...\n");
+            uri = new Uri(_serviceUri, "datasources/usgs-datasource");
+            string json = "{ 'name' : 'usgs-datasource','description' : 'USGS Dataset','type' : 'azuresql','credentials' : { 'connectionString' : 'Server=tcp:azs-playground.database.windows.net,1433;Database=usgs;User ID=reader;Password=Search42;Trusted_Connection=False;Encrypt=True;Connection Timeout=30;' },'container' : { 'name' : 'GeoNamesRI' }} ";
+            response = AzureSearchHelper.SendSearchRequest(_httpClient, HttpMethod.Put, uri, json);
+            if (response.StatusCode != HttpStatusCode.Created)
+                return false;
+
+            Console.WriteLine("{0}", "Creating Indexer...\n");
+            uri = new Uri(_serviceUri, "indexers/usgs-indexer");
+            json = "{ 'name' : 'usgs-indexer','description' : 'USGS data indexer','dataSourceName' : 'usgs-datasource','targetIndexName' : 'geonames','parameters' : { 'maxFailedItems' : 10, 'maxFailedItemsPerBatch' : 5, 'base64EncodeKeys': false }}";
+            response = AzureSearchHelper.SendSearchRequest(_httpClient, HttpMethod.Put, uri, json);
+            if (response.StatusCode != HttpStatusCode.Created)
+                return false;
+
+            Console.WriteLine("{0}", "Syncing data...\n");
+            uri = new Uri(_serviceUri, "indexers/usgs-indexer/run");
+            response = AzureSearchHelper.SendSearchRequest(_httpClient, HttpMethod.Post, uri);
+            if (response.StatusCode != HttpStatusCode.Accepted)
+                return false;
+
+            bool running = true;
+            Console.WriteLine("{0}", "Synchronization running...\n");
+            while (running)
             {
-                DataRow dtRow = dt.Rows[i];
-                IndexAction ia = new IndexAction();
-                Document doc = new Document();
-                colCounter = 0;
-                foreach (DataColumn dc in dt.Columns)
+                uri = new Uri(_serviceUri, "indexers/usgs-indexer/status");
+                response = AzureSearchHelper.SendSearchRequest(_httpClient, HttpMethod.Get, uri);
+                if (response.StatusCode != HttpStatusCode.OK)
+                    return false;
+
+                var result = AzureSearchHelper.DeserializeJson<dynamic>(response.Content.ReadAsStringAsync().Result);
+                if (result.lastResult != null)
                 {
-                    if (dt.Columns[colCounter].ToString() == "PRIM_LAT_DEC")
-                        PRIM_LAT_DEC = Convert.ToDouble(dtRow[dc]);
-                    else if (dt.Columns[colCounter].ToString() == "PRIM_LONG_DEC")
-                        PRIM_LONG_DEC = Convert.ToDouble(dtRow[dc]);
-                    else if ((dt.Columns[colCounter].ToString() == "STATE_NUMERIC") || (dt.Columns[colCounter].ToString() == "COUNTY_NUMERIC") || 
-                        (dt.Columns[colCounter].ToString() == "ELEV_IN_M") || (dt.Columns[colCounter].ToString() == "ELEV_IN_FT"))
+                    if (result.lastResult.status.Value == "inProgress")
                     {
-                        // Ensure integers are valid
-                        if (int.TryParse(dtRow[dc].ToString(), out outInt))
-                            doc.Add(dt.Columns[colCounter].ToString(), dtRow[dc].ToString());
-                    }
-                    else if ((dt.Columns[colCounter].ToString() == "DATE_CREATED") || (dt.Columns[colCounter].ToString() == "DATE_EDITED"))
-                    {
-                        // Apply a time offset
-                        if (dtRow[dc].ToString() != "")
-                        {
-                            DateTimeOffset offsetTime = Convert.ToDateTime(dtRow[dc]);
-                            doc.Add(dt.Columns[colCounter].ToString(), offsetTime);
-                        }
+                        Console.WriteLine("{0}", "Synchronization running...\n");
+                        Thread.Sleep(1000);
                     }
                     else
-                        doc.Add(dt.Columns[colCounter].ToString(), dtRow[dc].ToString());
-                    colCounter++;
-                }
-                if ((PRIM_LAT_DEC != 0) && (PRIM_LONG_DEC != 0))
-                {
-                    var point = GeographyPoint.Create(Convert.ToDouble(PRIM_LAT_DEC), Convert.ToDouble(PRIM_LONG_DEC));
-                    doc.Add("LOCATION", point);
-                }
-
-                indexOperations.Add(new IndexAction(IndexActionType.Upload, doc));
-                rowCounter++;
-                if (rowCounter > 999)
-                {
-                    IndexBatch(indexOperations);
-                    indexOperations = new List<IndexAction>();
-                    Console.WriteLine("{0} documents uploaded", rowCounter.ToString());
-                    rowCounter = 0;
+                    {
+                        running = false;
+                        Console.WriteLine("Synchronized {0} rows...\n", result.lastResult.itemsProcessed.Value);
+                    }
                 }
             }
-            if (rowCounter > 0)
-            {
-                IndexBatch(indexOperations);
-                Console.WriteLine("{0} documents uploaded", rowCounter.ToString());
-            }
 
-        }
-
-        private static System.Data.DataTable LoadCSV(string csvFileName)
-        {
-            // Open a CSV file and load it in to a DataTable
-            try
-            {
-                if (!File.Exists(csvFileName))
-                {
-                    Console.WriteLine("File does not exist:\r\n" + csvFileName);
-                    return null;
-                }
-
-                string conString = "Driver={Microsoft Text Driver (*.txt; *.csv)};Extensions=asc,csv,tab,txt;";
-                System.Data.Odbc.OdbcConnection con = new System.Data.Odbc.OdbcConnection(conString);
-                string commText = "SELECT * FROM [" + csvFileName + "]";
-                System.Data.Odbc.OdbcDataAdapter da = new System.Data.Odbc.OdbcDataAdapter(commText, con);
-                System.Data.DataTable dt = new System.Data.DataTable();
-                da.Fill(dt);
-                con.Close();
-                con.Dispose();
-                return dt;
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("There was an error loading the CSV file:\r\n" + ex.Message);
-                return null;
-            }
-        }
-
-
-        private static void IndexBatch(List<IndexAction> changes)
-        {
-            // Receive a batch of documents and upload to Azure Search
-            try
-            {
-                _indexClient.Documents.Index(new IndexBatch(changes));
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("Error uploading batch: {0}\r\n", ex.Message.ToString());
-            }
+            return true;
         }
 
         private static void SearchDocuments(string q, string filter)
