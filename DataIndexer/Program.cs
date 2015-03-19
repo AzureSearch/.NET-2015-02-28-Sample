@@ -105,22 +105,10 @@ namespace DataIndexer
             HttpClient _httpClient = new HttpClient();
             _httpClient.DefaultRequestHeaders.Add("api-key", ConfigurationManager.AppSettings["SearchServiceApiKey"]);
 
-            Console.WriteLine("{0}", "Deleting Indexer (if it exists)...\n");
-            Uri uri = new Uri(_serviceUri, "indexers/usgs-indexer");
-            HttpResponseMessage response = AzureSearchHelper.SendSearchRequest(_httpClient, HttpMethod.Delete, uri);
-            if (response.StatusCode != HttpStatusCode.NoContent)
-                return false;
-
-            Console.WriteLine("{0}", "Deleting Indexer Data Source (if it exists)...\n");
-            uri = new Uri(_serviceUri, "datasources/usgs-datasource");
-            response = AzureSearchHelper.SendSearchRequest(_httpClient, HttpMethod.Delete, uri);
-            if (response.StatusCode != HttpStatusCode.NoContent)
-                return false;
-
             Console.WriteLine("{0}", "Creating Indexer Data Source...\n");
-            uri = new Uri(_serviceUri, "datasources/usgs-datasource");
+            Uri uri = new Uri(_serviceUri, "datasources/usgs-datasource");
             string json = "{ 'name' : 'usgs-datasource','description' : 'USGS Dataset','type' : 'azuresql','credentials' : { 'connectionString' : 'Server=tcp:azs-playground.database.windows.net,1433;Database=usgs;User ID=reader;Password=Search42;Trusted_Connection=False;Encrypt=True;Connection Timeout=30;' },'container' : { 'name' : 'GeoNamesRI' }} ";
-            response = AzureSearchHelper.SendSearchRequest(_httpClient, HttpMethod.Put, uri, json);
+            HttpResponseMessage response = AzureSearchHelper.SendSearchRequest(_httpClient, HttpMethod.Put, uri, json);
             if (response.StatusCode != HttpStatusCode.Created)
                 return false;
 
