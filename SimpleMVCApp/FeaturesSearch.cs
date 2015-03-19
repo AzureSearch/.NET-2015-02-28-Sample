@@ -24,7 +24,7 @@ namespace SimpleSearchMVCApp
 
                 // Create an HTTP reference to the catalog index
                 _searchClient = new SearchServiceClient(searchServiceName, new SearchCredentials(apiKey));
-                _indexClient = _searchClient.Indexes.GetClient("features");
+                _indexClient = _searchClient.Indexes.GetClient("geonames");
             }
             catch (Exception e)
             {
