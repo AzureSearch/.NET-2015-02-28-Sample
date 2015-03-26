@@ -5,7 +5,6 @@ using Microsoft.Spatial;
 using System;
 using System.Collections.Generic;
 using System.Configuration;
-using System.Data;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -78,7 +77,6 @@ namespace DataIndexer
                         new Field("STATE_NUMERIC",  DataType.Int32)          { IsKey = false, IsSearchable = false, IsFilterable = true,  IsSortable = true,  IsFacetable = true,  IsRetrievable = true},
                         new Field("COUNTY_NAME",    DataType.String)         { IsKey = false, IsSearchable = true,  IsFilterable = true,  IsSortable = true,  IsFacetable = false, IsRetrievable = true},
                         new Field("COUNTY_NUMERIC", DataType.Int32)          { IsKey = false, IsSearchable = false, IsFilterable = true,  IsSortable = true,  IsFacetable = true,  IsRetrievable = true},
-                        new Field("LOCATION",       DataType.GeographyPoint) { IsKey = false, IsSearchable = false, IsFilterable = true,  IsSortable = true,  IsFacetable = false, IsRetrievable = true},
                         new Field("ELEV_IN_M",      DataType.Int32)          { IsKey = false, IsSearchable = false, IsFilterable = true,  IsSortable = true,  IsFacetable = true,  IsRetrievable = true},
                         new Field("ELEV_IN_FT",     DataType.Int32)          { IsKey = false, IsSearchable = false, IsFilterable = true,  IsSortable = true,  IsFacetable = true,  IsRetrievable = true},
                         new Field("MAP_NAME",       DataType.String)         { IsKey = false, IsSearchable = true,  IsFilterable = true,  IsSortable = true,  IsFacetable = false, IsRetrievable = true},
@@ -98,32 +96,41 @@ namespace DataIndexer
 
         }
 
-        private static bool SyncDataFromAzureSQL()
+        private static void SyncDataFromAzureSQL()
         {
             // This will use the Azure Search Indexer to synchronize data from Azure SQL to Azure Search
             Uri _serviceUri = new Uri("https://" + ConfigurationManager.AppSettings["SearchServiceName"] + ".search.windows.net");
             HttpClient _httpClient = new HttpClient();
             _httpClient.DefaultRequestHeaders.Add("api-key", ConfigurationManager.AppSettings["SearchServiceApiKey"]);
 
-            Console.WriteLine("{0}", "Creating Indexer Data Source...\n");
+            Console.WriteLine("{0}", "Creating Data Source...\n");
             Uri uri = new Uri(_serviceUri, "datasources/usgs-datasource");
             string json = "{ 'name' : 'usgs-datasource','description' : 'USGS Dataset','type' : 'azuresql','credentials' : { 'connectionString' : 'Server=tcp:azs-playground.database.windows.net,1433;Database=usgs;User ID=reader;Password=EdrERBt3j6mZDP;Trusted_Connection=False;Encrypt=True;Connection Timeout=30;' },'container' : { 'name' : 'GeoNamesRI' }} ";
             HttpResponseMessage response = AzureSearchHelper.SendSearchRequest(_httpClient, HttpMethod.Put, uri, json);
-            if (response.StatusCode != HttpStatusCode.Created)
-                return false;
+            if (response.StatusCode != HttpStatusCode.Created && response.StatusCode != HttpStatusCode.NoContent)
+            {
+                Console.WriteLine("Error creating data source: {0}", response.Content.ReadAsStringAsync().Result);
+                return;
+            }
 
             Console.WriteLine("{0}", "Creating Indexer...\n");
             uri = new Uri(_serviceUri, "indexers/usgs-indexer");
             json = "{ 'name' : 'usgs-indexer','description' : 'USGS data indexer','dataSourceName' : 'usgs-datasource','targetIndexName' : 'geonames','parameters' : { 'maxFailedItems' : 10, 'maxFailedItemsPerBatch' : 5, 'base64EncodeKeys': false }}";
             response = AzureSearchHelper.SendSearchRequest(_httpClient, HttpMethod.Put, uri, json);
-            if (response.StatusCode != HttpStatusCode.Created)
-                return false;
+            if (response.StatusCode != HttpStatusCode.Created && response.StatusCode != HttpStatusCode.NoContent)
+            {
+                Console.WriteLine("Error creating indexer: {0}", response.Content.ReadAsStringAsync().Result);
+                return;
+            }
 
             Console.WriteLine("{0}", "Syncing data...\n");
             uri = new Uri(_serviceUri, "indexers/usgs-indexer/run");
             response = AzureSearchHelper.SendSearchRequest(_httpClient, HttpMethod.Post, uri);
             if (response.StatusCode != HttpStatusCode.Accepted)
-                return false;
+            {
+                Console.WriteLine("Error running indexer: {0}", response.Content.ReadAsStringAsync().Result);
+                return;
+            }
 
             bool running = true;
             Console.WriteLine("{0}", "Synchronization running...\n");
@@ -132,7 +139,10 @@ namespace DataIndexer
                 uri = new Uri(_serviceUri, "indexers/usgs-indexer/status");
                 response = AzureSearchHelper.SendSearchRequest(_httpClient, HttpMethod.Get, uri);
                 if (response.StatusCode != HttpStatusCode.OK)
-                    return false;
+                {
+                    Console.WriteLine("Error polling for indexer status: {0}", response.Content.ReadAsStringAsync().Result);
+                    return;
+                }
 
                 var result = AzureSearchHelper.DeserializeJson<dynamic>(response.Content.ReadAsStringAsync().Result);
                 if (result.lastResult != null)
@@ -149,8 +159,6 @@ namespace DataIndexer
                     }
                 }
             }
-
-            return true;
         }
 
         private static void SearchDocuments(string q, string filter)
@@ -181,7 +189,5 @@ namespace DataIndexer
         {
             return colVal.Replace("'", "");
         }
-
-
     }
 }
