@@ -1,6 +1,0 @@
-C:\demo\GA_Demo\AzureSearchDotNetSample\AzureSearchDotNetSample\bin\Debug\AzureSearchDotNetSample.exe.config
-C:\demo\GA_Demo\AzureSearchDotNetSample\AzureSearchDotNetSample\bin\Debug\AzureSearchDotNetSample.exe
-C:\demo\GA_Demo\AzureSearchDotNetSample\AzureSearchDotNetSample\bin\Debug\AzureSearchDotNetSample.pdb
-C:\demo\GA_Demo\AzureSearchDotNetSample\AzureSearchDotNetSample\obj\Debug\DataIndexer.csprojResolveAssemblyReference.cache
-C:\demo\GA_Demo\AzureSearchDotNetSample\AzureSearchDotNetSample\obj\Debug\AzureSearchDotNetSample.exe
-C:\demo\GA_Demo\AzureSearchDotNetSample\AzureSearchDotNetSample\obj\Debug\AzureSearchDotNetSample.pdb
