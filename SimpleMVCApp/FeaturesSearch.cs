@@ -37,10 +37,8 @@ namespace SimpleSearchMVCApp
             // Execute search based on query string
             try
             {
-                SearchParameters sp = new SearchParameters();
-
-                string search = "&search=" + Uri.EscapeDataString(searchText);
-                return _indexClient.Documents.Search(searchText);
+                SearchParameters sp = new SearchParameters() { SearchMode = SearchMode.All };
+                return _indexClient.Documents.Search(searchText, sp);
             }
             catch (Exception ex)
             {
