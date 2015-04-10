@@ -48,7 +48,7 @@ namespace DataIndexer
             // Delete the index if it exists
             try
             {
-                AzureOperationResponse response = _searchClient.Indexes.Delete("geonames");
+                _searchClient.Indexes.Delete("geonames");
             }
             catch (Exception ex)
             {
@@ -147,47 +147,25 @@ namespace DataIndexer
                 var result = AzureSearchHelper.DeserializeJson<dynamic>(response.Content.ReadAsStringAsync().Result);
                 if (result.lastResult != null)
                 {
-                    if (result.lastResult.status.Value == "inProgress")
+                    switch ((string)result.lastResult.status)
                     {
-                        Console.WriteLine("{0}", "Synchronization running...\n");
-                        Thread.Sleep(1000);
-                    }
-                    else
-                    {
-                        running = false;
-                        Console.WriteLine("Synchronized {0} rows...\n", result.lastResult.itemsProcessed.Value);
+                        case "inProgress":
+                            Console.WriteLine("{0}", "Synchronization running...\n");
+                            Thread.Sleep(1000);
+                            break;
+
+                        case "success":
+                            running = false;
+                            Console.WriteLine("Synchronized {0} rows...\n", result.lastResult.itemsProcessed.Value);
+                            break;
+
+                        default:
+                            running = false;
+                            Console.WriteLine("Synchronization failed: {0}\n", result.lastResult.errorMessage);
+                            break;
                     }
                 }
             }
-        }
-
-        private static void SearchDocuments(string q, string filter)
-        {
-            // Execute search based on query string (q) and filter 
-            try
-            {
-                SearchParameters sp = new SearchParameters();
-                if (filter != string.Empty)
-                    sp.Filter = filter;
-                DocumentSearchResponse response = _indexClient.Documents.Search(q, sp);
-                foreach (SearchResult doc in response)
-                {
-                    string StoreName = doc.Document["StoreName"].ToString();
-                    string Address = (doc.Document["AddressLine1"].ToString() + " " + doc.Document["AddressLine2"].ToString()).Trim();
-                    string City = doc.Document["City"].ToString();
-                    string Country = doc.Document["Country"].ToString();
-                    Console.WriteLine("Store: {0}, Address: {1}, {2}, {3}", StoreName, Address, City, Country);
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("Error querying index: {0}\r\n", ex.Message.ToString());
-            }
-        }
-
-        static string EscapeQuotes(string colVal)
-        {
-            return colVal.Replace("'", "");
         }
     }
 }
