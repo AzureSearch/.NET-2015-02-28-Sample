@@ -8,6 +8,10 @@ namespace DataIndexer
 {
     class Program
     {
+        private const string GeoNamesIndex = "geonames";
+        private const string UsgsDataSource = "usgs-datasource";
+        private const string UsgsIndexer = "usgs-indexer";
+
         private static SearchServiceClient _searchClient;
         private static SearchIndexClient _indexClient;
 
@@ -19,10 +23,10 @@ namespace DataIndexer
 
             // Create an HTTP reference to the catalog index
             _searchClient = new SearchServiceClient(searchServiceName, new SearchCredentials(apiKey));
-            _indexClient = _searchClient.Indexes.GetClient("geonames");
+            _indexClient = _searchClient.Indexes.GetClient(GeoNamesIndex);
 
-            Console.WriteLine("{0}", "Deleting index...\n");
-            if (DeleteIndex())
+            Console.WriteLine("{0}", "Deleting index, data source, and indexer...\n");
+            if (DeleteIndexingResources())
             {
                 Console.WriteLine("{0}", "Creating index...\n");
                 CreateIndex();
@@ -33,16 +37,18 @@ namespace DataIndexer
             Console.ReadKey();
         }
 
-        private static bool DeleteIndex()
+        private static bool DeleteIndexingResources()
         {
-            // Delete the index if it exists
+            // Delete the index, data source, and indexer.
             try
             {
-                _searchClient.Indexes.Delete("geonames");
+                _searchClient.Indexes.Delete(GeoNamesIndex);
+                _searchClient.DataSources.Delete(UsgsDataSource);
+                _searchClient.Indexers.Delete(UsgsIndexer);
             }
             catch (Exception ex)
             {
-                Console.WriteLine("Error deleting index: {0}\r\n", ex.Message);
+                Console.WriteLine("Error deleting indexing resources: {0}\r\n", ex.Message);
                 Console.WriteLine("Did you remember to add your SearchServiceName and SearchServiceApiKey to the app.config?\r\n");
                 return false;
             }
@@ -57,7 +63,7 @@ namespace DataIndexer
             {
                 var definition = new Index()
                 {
-                    Name = "geonames",
+                    Name = GeoNamesIndex,
                     Fields = new[] 
                     { 
                         new Field("FEATURE_ID",     DataType.String)         { IsKey = true,  IsSearchable = false, IsFilterable = false, IsSortable = false, IsFacetable = false, IsRetrievable = true},
@@ -93,7 +99,7 @@ namespace DataIndexer
             var dataSource =
                 new DataSource()
                 {
-                    Name = "usgs-datasource",
+                    Name = UsgsDataSource,
                     Description = "USGS Dataset",
                     Type = DataSourceType.AzureSql,
                     Credentials = new DataSourceCredentials("Server=tcp:azs-playground.database.windows.net,1433;Database=usgs;User ID=reader;Password=EdrERBt3j6mZDP;Trusted_Connection=False;Encrypt=True;Connection Timeout=30;"),
@@ -102,7 +108,7 @@ namespace DataIndexer
 
             try
             {
-                _searchClient.DataSources.CreateOrUpdate(dataSource);
+                _searchClient.DataSources.Create(dataSource);
             }
             catch (Exception ex)
             {
@@ -110,42 +116,24 @@ namespace DataIndexer
                 return;
             }
 
-            Console.WriteLine("{0}", "Creating Indexer...\n");
+            Console.WriteLine("{0}", "Creating Indexer and syncing data...\n");
 
             var indexer =
                 new Indexer()
                 {
-                    Name = "usgs-indexer",
+                    Name = UsgsIndexer,
                     Description = "USGS data indexer",
                     DataSourceName = dataSource.Name,
-                    TargetIndexName = "geonames",
-                    Parameters = new IndexingParameters()
-                    {
-                        MaxFailedItems = 10,
-                        MaxFailedItemsPerBatch = 5,
-                        Base64EncodeKeys = false
-                    }
+                    TargetIndexName = GeoNamesIndex
                 };
 
             try
             {
-                _searchClient.Indexers.CreateOrUpdate(indexer);
+                _searchClient.Indexers.Create(indexer);
             }
             catch (Exception ex)
             {
-                Console.WriteLine("Error creating indexer: {0}", ex.Message);
-                return;
-            }
-
-            Console.WriteLine("{0}", "Syncing data...\n");
-
-            try
-            {
-                _searchClient.Indexers.Run(indexer.Name);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("Error running indexer: {0}", ex.Message);
+                Console.WriteLine("Error creating and running indexer: {0}", ex.Message);
                 return;
             }
 
