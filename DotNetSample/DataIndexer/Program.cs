@@ -141,11 +141,11 @@ namespace DataIndexer
             Console.WriteLine("{0}", "Synchronization running...\n");
             while (running)
             {
-                IndexerGetStatusResponse statusResponse = null;
+                IndexerExecutionInfo status = null;
 
                 try
                 {
-                    statusResponse = _searchClient.Indexers.GetStatus(indexer.Name);
+                    status = _searchClient.Indexers.GetStatus(indexer.Name);
                 }
                 catch (Exception ex)
                 {
@@ -153,7 +153,7 @@ namespace DataIndexer
                     return;
                 }
 
-                IndexerExecutionResult lastResult = statusResponse.ExecutionInfo.LastResult;
+                IndexerExecutionResult lastResult = status.LastResult;
                 if (lastResult != null)
                 {
                     switch (lastResult.Status)
